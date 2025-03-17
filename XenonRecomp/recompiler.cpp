@@ -2280,6 +2280,17 @@ bool Recompiler::Recompile(
             println("\t{}.u32[3] = {}.u32;", v(insn.operands[0]), temp());
             break;
 
+        case 5: // float16_4
+            if (insn.operands[3] != 2 || insn.operands[4] != 2)
+                fmt::println("Unexpected float16_4 pack instruction at {:X}", base);
+
+            for (size_t i = 0; i < 4; i++)
+            {
+		// First part masks the bit, second part masks the exponent and converts to 5-bit, last part masks the mantissa and crops to 10-bit
+                println("\t{}.u8[{}] = (({}.u32[{}]&0x80000000)>>16)+(((({}.u32[{}]&0x7f800000)>>23)-0x70)<<10)+(({}.u32[{}]&0x7FE000)>>13);", v(insn.operands[0]), i, v(insn.operands[1]), i, v(insn.operands[1]), i, v(insn.operands[1]), i);
+            }
+            break;
+
         default:
             println("\t__builtin_debugtrap();");
             break;
