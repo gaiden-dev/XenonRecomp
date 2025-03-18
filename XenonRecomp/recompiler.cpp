@@ -2267,7 +2267,7 @@ bool Recompiler::Recompile(
         switch (insn.operands[2])
         {
         case 0: // D3D color
-            if (insn.operands[3] != 1 || insn.operands[4] != 3)
+            if (insn.operands[3] != 1)
                 fmt::println("Unexpected D3D color pack instruction at {:X}", base);
 
             for (size_t i = 0; i < 4; i++)
@@ -2277,7 +2277,7 @@ bool Recompiler::Recompile(
                 println("\t{}.f32[{}] = {}.f32[{}] < 3.0f ? 3.0f : ({}.f32[{}] > {}.f32[{}] ? {}.f32[{}] : {}.f32[{}]);", vTemp(), i, v(insn.operands[1]), i, v(insn.operands[1]), i, vTemp(), i, vTemp(), i, v(insn.operands[1]), i);
                 println("\t{}.u32 {}= uint32_t({}.u8[{}]) << {};", temp(), i == 0 ? "" : "|", vTemp(), i * 4, indices[i] * 8);
             }
-            println("\t{}.u32[3] = {}.u32;", v(insn.operands[0]), temp());
+            println("\t{}.u32[{}] = {}.u32;", v(insn.operands[0]), insn.operands[4], temp());
             break;
 
         case 5: // float16_4
