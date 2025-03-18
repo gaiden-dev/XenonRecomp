@@ -2287,7 +2287,7 @@ bool Recompiler::Recompile(
             for (size_t i = 0; i < 4; i++)
             {
 		// First part masks the bit, second part masks the exponent and converts to 5-bit, last part masks the mantissa and crops to 10-bit
-                println("\t{}.u8[{}] = (({}.u32[{}]&0x80000000)>>16)+(((({}.u32[{}]&0x7f800000)>>23)-0x70)<<10)+(({}.u32[{}]&0x7FE000)>>13);", v(insn.operands[0]), i, v(insn.operands[1]), i, v(insn.operands[1]), i, v(insn.operands[1]), i);
+                println("\t{}.u16[{}] = (({}.u32[{}]&0x80000000)>>16)+(((({}.u32[{}]&0x7f800000)>>23)-0x70)<<10)+(({}.u32[{}]&0x7FE000)>>13);", v(insn.operands[0]), i+4, v(insn.operands[1]), i, v(insn.operands[1]), i, v(insn.operands[1]), i);
             }
             break;
 
