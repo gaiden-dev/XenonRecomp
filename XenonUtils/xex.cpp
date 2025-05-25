@@ -5,6 +5,8 @@
 #include <vector>
 #include <unordered_map>
 #include <aes.hpp>
+#include <TinySHA1.hpp>
+#include <xex_patcher.h>
 
 #define STRINGIFY(X) #X
 #define XE_EXPORT(MODULE, ORDINAL, NAME, TYPE) { (ORDINAL), "__imp__" STRINGIFY(NAME) }
@@ -135,7 +137,7 @@ Image Xex2LoadImage(const uint8_t* data, size_t dataSize)
     // Decompress image
     if (fileFormatInfo != nullptr)
     {
-        assert(fileFormatInfo->compressionType <= XEX_COMPRESSION_BASIC);
+        assert(fileFormatInfo->compressionType <= XEX_COMPRESSION_NORMAL);
 
         std::unique_ptr<uint8_t[]> decryptedData;
         const uint8_t* srcData = nullptr;
@@ -192,6 +194,67 @@ Image Xex2LoadImage(const uint8_t* data, size_t dataSize)
                 destData += blocks[i].zeroSize;
             }
         }
+        else if (fileFormatInfo->compressionType == XEX_COMPRESSION_NORMAL)
+        {
+            result = std::make_unique<uint8_t[]>(imageSize);
+            auto* destData = result.get();
+
+            const Xex2CompressedBlockInfo* blocks = &((const Xex2FileNormalCompressionInfo*)(fileFormatInfo + 1))->firstBlock;
+            const uint32_t headerSize = header->headerSize.get();
+
+            const uint32_t exeLength = dataSize - headerSize;
+            const uint8_t* exeBuffer = srcData;
+
+            auto compressBuffer = std::make_unique<uint8_t[]>(exeLength);
+            const uint8_t* p = NULL;
+            uint8_t* d = NULL;
+            sha1::SHA1 s;
+
+            p = exeBuffer;
+            d = compressBuffer.get();
+
+            uint8_t blockCalcedDigest[0x14];
+            while (blocks->blockSize) 
+            {
+                const uint8_t* pNext = p + blocks->blockSize;
+                const auto* nextBlock = (const Xex2CompressedBlockInfo*)p;
+
+                s.reset();
+                s.processBytes(p, blocks->blockSize);
+                s.finalize(blockCalcedDigest);
+
+                if (memcmp(blockCalcedDigest, blocks->blockHash, 0x14) != 0)
+                    return {};
+
+                p += 4;
+                p += 20;
+
+                while (true) 
+                {
+                    const size_t chunkSize = (p[0] << 8) | p[1];
+                    p += 2;
+
+                    if (!chunkSize)
+                        break;
+
+                    memcpy(d, p, chunkSize);
+                    p += chunkSize;
+                    d += chunkSize;
+                }
+
+                p = pNext;
+                blocks = nextBlock;
+            }
+
+            int resultCode = 0;
+            uint32_t uncompressedSize = security->imageSize;
+            uint8_t* buffer = destData;
+
+            resultCode = lzxDecompress(compressBuffer.get(), d - compressBuffer.get(), buffer, uncompressedSize, ((const Xex2FileNormalCompressionInfo*)(fileFormatInfo + 1))->windowSize, nullptr, 0);
+
+            if (resultCode)
+                return {};
+        }
     }
 
     image.data = std::move(result);
@@ -201,8 +264,17 @@ Image Xex2LoadImage(const uint8_t* data, size_t dataSize)
     const auto* dosHeader = reinterpret_cast<IMAGE_DOS_HEADER*>(image.data.get());
     const auto* ntHeaders = reinterpret_cast<IMAGE_NT_HEADERS32*>(image.data.get() + dosHeader->e_lfanew);
 
-    image.base = ntHeaders->OptionalHeader.ImageBase;
-    image.entry_point = image.base + ntHeaders->OptionalHeader.AddressOfEntryPoint;
+    image.base = security->loadAddress;
+    const void* xex2BaseAddressPtr = getOptHeaderPtr(data, XEX_HEADER_IMAGE_BASE_ADDRESS);
+    if (xex2BaseAddressPtr != nullptr)
+    {
+        image.base = *reinterpret_cast<const be<uint32_t>*>(xex2BaseAddressPtr);
+    }
+    const void* xex2EntryPointPtr = getOptHeaderPtr(data, XEX_HEADER_ENTRY_POINT);
+    if (xex2EntryPointPtr != nullptr)
+    {
+        image.entry_point = *reinterpret_cast<const be<uint32_t>*>(xex2EntryPointPtr);
+    }
 
     const auto numSections = ntHeaders->FileHeader.NumberOfSections;
     const auto* sections = reinterpret_cast<const IMAGE_SECTION_HEADER*>(ntHeaders + 1);
@@ -227,10 +299,13 @@ Image Xex2LoadImage(const uint8_t* data, size_t dataSize)
         std::vector<std::string_view> stringTable;
         auto* pStrTable = reinterpret_cast<const char*>(imports + 1);
 
+        size_t paddedStringOffset = 0;
         for (size_t i = 0; i < imports->numImports; i++)
         {
-            stringTable.emplace_back(pStrTable);
-            pStrTable += strlen(pStrTable) + 1;
+            stringTable.emplace_back(pStrTable + paddedStringOffset);
+            
+            // pad the offset to the next multiple of 4
+            paddedStringOffset += ((stringTable.back().length() + 1) + 3) & ~3;
         }
 
         auto* library = (Xex2ImportLibrary*)(((char*)imports) + sizeof(Xex2ImportHeader) + imports->sizeOfStringTable);
