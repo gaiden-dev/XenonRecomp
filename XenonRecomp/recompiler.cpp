@@ -900,7 +900,7 @@ bool Recompiler::Recompile(
         break;
 
     case PPC_INST_EIEIO:
-        // no op
+        println("\tsimde_mm_mfence();");
         break;
 
     case PPC_INST_EQV:
@@ -1910,7 +1910,7 @@ bool Recompiler::Recompile(
         break;
 
     case PPC_INST_SYNC:
-        // no op
+        println("\tsimde_mm_mfence();");
         break;
 
     case PPC_INST_TDLGEI:
